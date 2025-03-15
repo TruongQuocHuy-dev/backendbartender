@@ -6,9 +6,18 @@ export const getUsers = async () => {
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
-export const updateUser = async (user_id, data) => {
-  const userRef = doc(db, 'users', user_id);
-  await updateDoc(userRef, data);
+export const updateUser = async (userId, data) => {
+  try {
+    const userRef = doc(db, "users", userId);
+    await updateDoc(userRef, {
+      ...data,
+      last_updated: new Date() // Tự động cập nhật thời gian
+    });
+    return true;
+  } catch (error) {
+    console.error("Lỗi cập nhật:", error);
+    throw error;
+  }
 };
 
 export const deleteUser = async (user_id) => {

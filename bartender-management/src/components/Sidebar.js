@@ -17,6 +17,7 @@ const Sidebar = ({ currentScreen }) => {
     { name: SCREEN_NAMES.POSTS, icon: <ArticleIcon />, label: 'Bài viết' },
     { name: SCREEN_NAMES.RECIPES, icon: <RestaurantIcon />, label: 'Công thức' },
     { name: SCREEN_NAMES.BANNERS, icon: <ImageIcon />, label: 'Banners' },
+    { name: SCREEN_NAMES.REPORTS, icon: <ImageIcon />, label: 'Report' },
   ];
 
   return (

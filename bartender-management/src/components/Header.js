@@ -1,6 +1,6 @@
 import React from 'react';
 import { AppBar, Toolbar, Typography, IconButton } from '@mui/material';
-import Brightness6Icon from '@mui/icons-material/Brightness6'; // Chỉ giữ lại icon được sử dụng
+import Brightness6Icon from '@mui/icons-material/Brightness6';
 import { COLORS } from '../utils/constants';
 
 const Header = ({ userName, onToggleTheme }) => {

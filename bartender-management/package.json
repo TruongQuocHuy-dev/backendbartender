@@ -8,6 +8,7 @@
     "@mui/icons-material": "^6.4.6",
     "@mui/lab": "^6.0.0-beta.29",
     "@mui/material": "^6.4.6",
+    "@mui/x-charts": "^7.27.1",
     "@mui/x-data-grid": "^7.27.2",
     "@react-native-firebase/app": "^21.11.0",
     "@react-native-firebase/auth": "^21.11.0",
@@ -25,6 +26,7 @@
     "react-native": "^0.78.0",
     "react-router-dom": "^6.28.0",
     "react-scripts": "5.0.1",
+    "recharts": "^2.15.1",
     "web-vitals": "^2.1.4"
   },
   "scripts": {

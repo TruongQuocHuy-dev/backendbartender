@@ -1,3 +1,4 @@
+const qs = require('qs');
 const { urlencoded } = require('body-parser');
 const express = require('express');
 const app = express();
@@ -5,6 +6,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const admin = require('firebase-admin');
 const moment = require('moment');
+
 
 const config = require('./config');
 
@@ -200,6 +202,213 @@ app.post('/check-status-transaction', async (req, res) => {
     return res.status(500).json({ statusCode: 500, message: error.message });
   }
 });
+
+
+// Thêm cấu hình VNPay
+const vnpConfig = {
+  vnp_Version: '2.1.0',
+  vnp_Command: 'pay',
+  vnp_TmnCode: '412SUAFX', // Thay bằng mã website của bạn
+  vnp_HashSecret: 'N5R95ZPCSFA01HZ5JWU7ZY9TLC6794EB', // Thay bằng secret key của bạn
+  vnp_ReturnUrl: 'https://ed09-14-191-196-206.ngrok-free.app/vnpay_return', // URL return sau thanh toán
+  vnp_Url: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
+};
+
+// Route tạo payment URL
+app.get('/vnpay_return', async (req, res) => {
+  console.log('Received VNPay callback:', req.query);
+  const { vnp_SecureHash, vnp_SecureHashType, ...vnp_Params } = req.query;
+  
+  // Validate signature
+  const sortedParams = sortObject(vnp_Params);
+  const signData = qs.stringify(sortedParams, { encode: false }); // Changed encode to false
+  const hmac = crypto.createHmac("sha512", vnpConfig.vnp_HashSecret);
+  const signed = hmac.update(signData).digest("hex");
+
+  if (vnp_SecureHash !== signed) {
+    console.error('Invalid signature:', { received: vnp_SecureHash, calculated: signed });
+    return res.status(400).json({ error: 'Invalid signature' });
+  }
+
+  const { 
+    vnp_TxnRef: orderId, 
+    vnp_ResponseCode: rspCode,
+    vnp_Amount: amount,
+    vnp_TransactionNo: transactionNo,
+    vnp_PayDate: payDate
+  } = vnp_Params;
+
+  const transactionRef = db.collection('transactions').doc(orderId);
+  const doc = await transactionRef.get();
+
+  if (!doc.exists) {
+    console.error('Transaction not found:', orderId);
+    return res.status(404).json({ error: 'Transaction not found' });
+  }
+
+  const { userId } = doc.data();
+  const paymentAmount = parseInt(amount) / 100; // Convert back from VNPay's format (x100)
+
+  // Prepare payment record
+  const paymentData = {
+    userId,
+    orderId,
+    paymentMethod: 'VNPay',
+    amount: paymentAmount,
+    transactionNo: transactionNo || '',
+    paymentDate: payDate ? moment(payDate, 'YYYYMMDDHHmmss').toDate() : new Date(),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    status: 'pending'
+  };
+
+  try {
+    switch (rspCode) {
+      case '00': // Success
+        const expiryDate = paymentAmount === 99000 
+          ? moment().add(1, 'month').toDate()
+          : moment().add(1, 'year').toDate();
+
+        // Update user premium status
+        await db.collection('users').doc(userId).update({
+          premium_status: true,
+          premium_expiry_date: admin.firestore.Timestamp.fromDate(expiryDate),
+          last_updated: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Update transaction status
+        await transactionRef.update({
+          status: 'completed',
+          updated_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Save payment record
+        paymentData.status = 'completed';
+        await db.collection('payments').doc(orderId).set(paymentData);
+
+        return res.redirect(`bartenderapp://payment-success?orderId=${orderId}&amount=${paymentAmount}&resultCode=0`);
+
+      case '07': // Processing (waiting for OTP)
+        await transactionRef.update({ 
+          status: 'processing',
+          updated_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+        paymentData.status = 'processing';
+        await db.collection('payments').doc(orderId).set(paymentData);
+        return res.redirect(`bartenderapp://payment-pending?orderId=${orderId}`);
+
+      case '09': // OTP invalid
+        await transactionRef.update({ 
+          status: 'otp_invalid',
+          updated_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+        paymentData.status = 'failed';
+        paymentData.errorCode = '09';
+        await db.collection('payments').doc(orderId).set(paymentData);
+        return res.redirect(`bartenderapp://payment-otp-error?orderId=${orderId}`);
+
+      default: // Other errors
+        await transactionRef.update({ 
+          status: 'failed',
+          error_code: rspCode,
+          updated_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+        paymentData.status = 'failed';
+        paymentData.errorCode = rspCode;
+        await db.collection('payments').doc(orderId).set(paymentData);
+        return res.redirect(`bartenderapp://payment-failed?orderId=${orderId}&code=${rspCode}`);
+    }
+  } catch (error) {
+    console.error('Error processing VNPay return:', error);
+    paymentData.status = 'error';
+    paymentData.errorMessage = error.message;
+    await db.collection('payments').doc(orderId).set(paymentData);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update create_payment_url route to include initial payment record
+app.post('/order/create_payment_url', async (req, res) => {
+  const { userId, amount } = req.body;
+  const ipAddr = req.headers['x-forwarded-for'] || 
+                req.connection.remoteAddress || 
+                req.socket.remoteAddress || 
+                req.connection.socket.remoteAddress;
+
+  const tmnCode = vnpConfig.vnp_TmnCode;
+  const secretKey = vnpConfig.vnp_HashSecret;
+  const returnUrl = vnpConfig.vnp_ReturnUrl;
+  
+  const orderId = `${tmnCode}_${Date.now()}`;
+  const createDate = moment().format('YYYYMMDDHHmmss');
+  const bankCode = 'VNBANK';
+  
+  let vnp_Params = {
+    vnp_Version: vnpConfig.vnp_Version,
+    vnp_Command: vnpConfig.vnp_Command,
+    vnp_TmnCode: tmnCode,
+    vnp_Locale: 'vn',
+    vnp_CurrCode: 'VND',
+    vnp_TxnRef: orderId,
+    vnp_OrderInfo: `Thanh toan goi premium cho user ${userId}`,
+    vnp_OrderType: 'billpayment',
+    vnp_Amount: amount * 100,
+    vnp_ReturnUrl: returnUrl,
+    vnp_IpAddr: ipAddr,
+    vnp_CreateDate: createDate,
+  };
+
+  if (bankCode) vnp_Params.vnp_BankCode = bankCode;
+
+  vnp_Params = sortObject(vnp_Params);
+  const signData = qs.stringify(vnp_Params, { encode: false }); // Changed encode to false
+  const secureHash = crypto.createHmac('sha512', secretKey)
+                          .update(signData)
+                          .digest('hex');
+
+  const vnpUrl = `${vnpConfig.vnp_Url}?${qs.stringify({ 
+    ...vnp_Params, 
+    vnp_SecureHash: secureHash 
+  }, { encode: false })}`;
+  
+  // Save initial records
+  await Promise.all([
+    db.collection('transactions').doc(orderId).set({
+      userId,
+      amount,
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp()
+    }),
+    db.collection('payments').doc(orderId).set({
+      userId,
+      orderId,
+      paymentMethod: 'VNPay',
+      amount,
+      status: 'pending',
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    })
+  ]);
+
+  res.json({ paymentUrl: vnpUrl });
+});
+
+
+// Hàm sắp xếp object
+function sortObject(obj) {
+  let sorted = {};
+  let str = [];
+  let key;
+  for (key in obj) {
+    if (obj.hasOwnProperty(key)) {
+      str.push(encodeURIComponent(key));
+    }
+  }
+  str.sort();
+  for (key = 0; key < str.length; key++) {
+    sorted[str[key]] = encodeURIComponent(obj[str[key]]).replace(/%20/g, "+");
+  }
+  return sorted;
+}
+
 
 app.listen(5000, () => {
   console.log('Server is running at port 5000');

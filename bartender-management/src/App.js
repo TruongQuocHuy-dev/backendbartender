@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
 import { BrowserRouter as Router, Navigate, Routes, Route } from 'react-router-dom';
 import AppNavigator from './navigation/AppNavigator';
-import LoginScreen from './screens/LoginScreen'; // Thêm import này
+import LoginScreen from './screens/LoginScreen';
 import { theme } from './styles/theme';
 import { auth } from './services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -32,8 +32,8 @@ const App = () => {
     <ThemeProvider theme={theme}>
       <Router>
         <Routes>
-          <Route path="/login" element={<LoginScreen />} /> {/* Sử dụng LoginScreen đã import */}
-          <Route path="/*" element={user ? <AppNavigator /> : <Navigate to="/login" replace />} /> {/* Bảo vệ các route khác */}
+          <Route path="/login" element={<LoginScreen />} />
+          <Route path="/*" element={user ? <AppNavigator /> : <Navigate to="/login" replace />} />
         </Routes>
       </Router>
     </ThemeProvider>

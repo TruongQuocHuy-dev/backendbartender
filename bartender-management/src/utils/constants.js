@@ -12,4 +12,5 @@ export const SCREEN_NAMES = {
   POSTS: 'Posts',
   RECIPES: 'Recipes',
   BANNERS: 'Banners',
+  REPORTS: 'reports',
 };

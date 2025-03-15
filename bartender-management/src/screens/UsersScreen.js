@@ -10,7 +10,7 @@ import { useNavigate } from 'react-router-dom';
 const UsersScreen = () => {
   const [users, setUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [user, setUser] = useState(null); // Trạng thái người dùng hiện tại
+  const [user, setUser] = useState(null);
   const navigate = useNavigate();
 
   // Kiểm tra trạng thái đăng nhập khi component mount

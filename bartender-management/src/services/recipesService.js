@@ -1,6 +1,6 @@
 // src/services/recipesService.js
 import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc  } from "firebase/firestore";
-import { db } from "./firebase"; // Đảm bảo đường dẫn đúng tới firebase.js
+import { db } from "./firebase";
 
 export const getRecipes = async () => {
   const recipeCollection = collection(db, "recipes");
